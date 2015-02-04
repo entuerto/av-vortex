@@ -22,6 +22,8 @@ import (
 type jsonRequest struct {
 	rpc.Request
 
+	result chan *rpc.Result
+
 	serviceName string       `json:"-"`
 	methodName  string       `json:"-"`
 
@@ -46,9 +48,20 @@ func (r jsonRequest) DecodeParams(args interface{}) error {
 	return nil
 }
 
+func (r jsonRequest) Result() chan *rpc.Result {
+	return r.result
+}
+
+func newJsonRequest() *jsonRequest {
+	return &jsonRequest{
+		result: make(chan *rpc.Result),
+	}
+}
+
 //-----------------------------------------------------------------------------
 // Reponse
 //-----------------------------------------------------------------------------
+
 type jsonResponse struct {
 	Version string           `json:"jsonrpc"`
 	Id      *json.RawMessage `json:"id"`
@@ -59,20 +72,21 @@ type jsonResponse struct {
 //-----------------------------------------------------------------------------
 // ServerCodec
 //-----------------------------------------------------------------------------
+
 type ServerCodec struct {
 	reader io.Reader
 	writer io.Writer
 }
 
-func (c ServerCodec) ReadRequest() (rpc.Request, *rpc.ServerError) {
-	log.Printf("[%p] ReadRequest...\n", c)
+func ReadRequest(reader io.Reader) (rpc.Request, error) {
+	log.Printf("[%p] ReadRequest...\n", reader)
 
-	dec := json.NewDecoder(c.reader)
+	dec := json.NewDecoder(reader)
 	if dec == nil {
 		return nil, rpc.NewServerError(rpc.ERR_INTERNAL, "Could not create JSON decoder", nil)
 	}
 
-	jreq := new(jsonRequest)
+	jreq := newJsonRequest()
 
 	if err := dec.Decode(&jreq); err != nil {
 		return jreq, rpc.NewServerError(rpc.ERR_INTERNAL, err.Error(), nil)
@@ -93,16 +107,16 @@ func (c ServerCodec) ReadRequest() (rpc.Request, *rpc.ServerError) {
 	return jreq, nil  
 }
 
-func (c ServerCodec) WriteResponse(request rpc.Request, result interface{}, serr *rpc.ServerError) error {
-	log.Printf("[%p]  WriteResponse...\n", c)
+func WriteResponse(writer io.Writer, request rpc.Request, result *rpc.Result) error {
+	log.Printf("[%p]  WriteResponse...\n", writer)
 
-	enc := json.NewEncoder(c.writer)
+	enc := json.NewEncoder(writer)
 	if enc == nil {
 		return errors.New("Could not create JSON encoder")
 	} 
 
-	jreq := request.(*jsonRequest)
-	if jreq == nil {
+	jreq, ok := request.(*jsonRequest)
+	if !ok {
 		return errors.New("Could not cast to JSON request")
 	} 
 
@@ -111,10 +125,10 @@ func (c ServerCodec) WriteResponse(request rpc.Request, result interface{}, serr
 		Id: jreq.Id,
 	}
 
-	if serr != nil {
-		jresp.Error = newJsonErrorFromServerError(serr) 
+	if result.Error != nil {
+		jresp.Error = newJsonErrorFromError(result.Error) 
 	} else {
-		jresp.Result = result
+		jresp.Result = result.Value
 	}
 
 	return enc.Encode(jresp)
@@ -128,26 +142,43 @@ func (c ServerCodec) Close() error {
 	return nil
 }
 
-func NewServerCodec(w http.ResponseWriter, r *http.Request) *ServerCodec {
+//-----------------------------------------------------------------------------
+// Handle HTTP requests
+//-----------------------------------------------------------------------------
+
+func HandleHTTP(path string, srv *rpc.Server) {
+	http.Handle(path, &handler{srv})
+}
+
+type handler struct {
+	*rpc.Server
+}
+
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "rpc: POST method required, received " + r.Method, http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Println("New connection established")
+/*
+	codec := &ServerCodec{
+		reader: r.Body,
+		writer: w,
+	}
+*/
+	
+	request, _ := ReadRequest(r.Body)
+
+    h.RequestQueue <- request
+    result := <-request.Result() // this blocks
+	
 	// Prevents Internet Explorer from MIME-sniffing a response away
 	// from the declared content-type
 	w.Header().Set("x-content-type-options", "nosniff")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	return &ServerCodec{
-		reader: r.Body,
-		writer: w,
-	}
-}
+	//go h.CallServiceMethod(codec)
 
-//-----------------------------------------------------------------------------
-// ServerCodecCreator
-//-----------------------------------------------------------------------------
-
-// 
-type ServerCodecCreator struct {}
-
-// NewServerCodec returns a new rpc.ServerCodec using JSON-RPC
-func (c ServerCodecCreator) New(w http.ResponseWriter, r *http.Request) rpc.ServerCodec  {
-	return NewServerCodec(w, r)
+	WriteResponse(w, request, result)
 }

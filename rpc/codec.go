@@ -4,7 +4,6 @@
 
 package rpc
 
-import "net/http"
 
 // A ServerCodec implements reading of RPC requests and writing of
 // RPC responses for the server side of an RPC session.
@@ -23,12 +22,6 @@ type ServerCodec interface {
 	WriteResponse(Request, interface{}, *ServerError) error
 
 	Close() error
-}
-
-// Creator interface to anable a JSON server codec for HTTP streams
-type ServerCodecHTTPCreator interface {
-	// Creates a server codec
-	New(http.ResponseWriter, *http.Request) ServerCodec
 }
 
 // A ClientCodec implements writing of RPC requests and
