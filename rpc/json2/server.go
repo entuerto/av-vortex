@@ -69,37 +69,29 @@ type jsonResponse struct {
 	Error   *jsonError       `json:"error,omitempty"`
 }
 
-//-----------------------------------------------------------------------------
-// ServerCodec
-//-----------------------------------------------------------------------------
 
-type ServerCodec struct {
-	reader io.Reader
-	writer io.Writer
-}
-
-func ReadRequest(reader io.Reader) (rpc.Request, error) {
+func readRequest(reader io.Reader) (rpc.Request, error) {
 	log.Printf("[%p] ReadRequest...\n", reader)
 
 	dec := json.NewDecoder(reader)
 	if dec == nil {
-		return nil, rpc.NewServerError(rpc.ERR_INTERNAL, "Could not create JSON decoder", nil)
+		return nil, newJsonError(JSON_ERR_INTERNAL, "Could not create JSON decoder", nil)
 	}
 
 	jreq := newJsonRequest()
 
 	if err := dec.Decode(&jreq); err != nil {
-		return jreq, rpc.NewServerError(rpc.ERR_INTERNAL, err.Error(), nil)
+		return jreq, newJsonError(JSON_ERR_INTERNAL, err.Error(), nil)
 	}
 
 	if jreq.Version != "2.0" {
-		return jreq, rpc.NewServerError(rpc.ERR_INVALID_REQ, "Invalid version", nil)
+		return jreq, newJsonError(JSON_ERR_INVALID_REQ, "RPC-JSON2: Invalid version", nil)
 	}
 
 	// find service
 	dot := strings.LastIndex(jreq.Method, ".")
 	if dot < 0 {
-		return jreq, rpc.NewServerError(rpc.ERR_INVALID_REQ, "rpc: service/method request ill-formed: " + jreq.Method, nil)
+		return jreq, newJsonError(JSON_ERR_INVALID_REQ, "RPC-JSON2: service/method request ill-formed: " + jreq.Method, nil)
 	}
 
 	jreq.serviceName = jreq.Method[:dot]
@@ -107,7 +99,7 @@ func ReadRequest(reader io.Reader) (rpc.Request, error) {
 	return jreq, nil  
 }
 
-func WriteResponse(writer io.Writer, request rpc.Request, result *rpc.Result) error {
+func writeResponse(writer io.Writer, request rpc.Request, result *rpc.Result) error {
 	log.Printf("[%p]  WriteResponse...\n", writer)
 
 	enc := json.NewEncoder(writer)
@@ -134,14 +126,6 @@ func WriteResponse(writer io.Writer, request rpc.Request, result *rpc.Result) er
 	return enc.Encode(jresp)
 }
 
-func (c ServerCodec) Close() error {
-	log.Printf("[%p] Close...\n", c)
-
-	//w := c.writer.(io.WriteCloser)
-	//return w.Close()
-	return nil
-}
-
 //-----------------------------------------------------------------------------
 // Handle HTTP requests
 //-----------------------------------------------------------------------------
@@ -156,19 +140,17 @@ type handler struct {
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "rpc: POST method required, received " + r.Method, http.StatusMethodNotAllowed)
+		http.Error(w, "RPC-JSON2: POST method required, received " + r.Method, http.StatusMethodNotAllowed)
 		return
 	}
 
 	log.Println("New connection established")
-/*
-	codec := &ServerCodec{
-		reader: r.Body,
-		writer: w,
-	}
-*/
 	
-	request, _ := ReadRequest(r.Body)
+	request, err := readRequest(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
     h.RequestQueue <- request
     result := <-request.Result() // this blocks
@@ -178,7 +160,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-content-type-options", "nosniff")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	//go h.CallServiceMethod(codec)
-
-	WriteResponse(w, request, result)
+	if err := writeResponse(w, request, result); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

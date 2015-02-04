@@ -5,8 +5,13 @@
 package rpc
 
 
-type Response struct {
-	ServiceMethod string       // echoes that of the Request
-	Id            interface{}  // echoes that of the request
-	Error         ServerError  // error, if any.
-}
+type Client struct {}
+
+// Call invokes the named function, waits for it to complete, and returns its error status.
+ func (client *Client) Call(serviceMethod string, args interface{}, reply interface{}) error {
+
+ }
+
+ func (client *Client) Close() error {
+ 	
+ }

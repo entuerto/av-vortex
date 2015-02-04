@@ -26,6 +26,10 @@ type methodType struct {
 	replyType reflect.Type   // type of the response argument
 }
 
+// Precompute the reflect type for error.  Can't use error directly
+// because Typeof takes an empty interface value.  This is annoying.
+var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
+
 func (s *Service) Call(req Request) (interface{}, error) {
 	// Find Method
 	serviceMethod := s.method[req.MethodName()]

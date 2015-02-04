@@ -15,7 +15,6 @@ import (
    "log"
    "runtime"
    "errors"
-   _ "expvar"
    "net/http"
 
    "github.com/entuerto/av-vortex/rpc"
@@ -61,11 +60,18 @@ func main() {
 	ca := new(Calculator)
 
  	server := rpc.NewServer()
-	server.Register(si)
-	server.Register(ca)
+
+	if err := server.Register(si); err != nil {
+		log.Println(err)
+	}
+
+	if err := server.Register(ca); err != nil {
+		log.Println(err)
+	}
 
 	json2.HandleHTTP("/rpc", server)
 
 	log.Println("Waiting for connection...")
+
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }

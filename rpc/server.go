@@ -2,20 +2,40 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+/*
+Package rpc provides access to the exported methods of an object across a
+network or other I/O connection.  A server registers an object, making it visible
+as a service with the name of the type of the object.  After registration, exported
+methods of the object will be accessible remotely.  A server may register multiple
+objects (services) of different types but it is an error to register multiple
+objects of the same type.
+
+Only methods that satisfy these criteria will be made available for remote access;
+other methods will be ignored:
+
+	- the method is exported.
+	- the method has two arguments, both exported (or builtin) types.
+	- the method's second argument is a pointer.
+	- the method has return type error.
+
+In effect, the method must look schematically like
+
+	func (t *T) MethodName(argType T1, replyType *T2) error
+
+The method's first argument represents the arguments provided by the caller; the
+second argument represents the result parameters to be returned to the caller.
+The method's return value, if non-nil, is passed back as a string that the client
+sees as if created by errors.New.  If an error is returned, the reply parameter
+will not be sent back to the client.
+*/
 package rpc
 
 import (
+	"errors"
 	"flag"
-	"log"
-	_ "net/http"
 	"reflect"
 	"sync"
-	"errors"
 )
-
-// Precompute the reflect type for error.  Can't use error directly
-// because Typeof takes an empty interface value.  This is annoying.
-var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
 
 // Client request. When the client sends a request it is in
 // the format "Service.Method"
@@ -26,14 +46,25 @@ type Request interface {
 	Result() chan *Result 
 }
 
+// Result from the specified request
 type Result struct {
 	Value  interface{}
 	Error  error
 }
 
+// Returns a new result structure
+func NewResult(value interface{}, err error) *Result {
+	return &Result{
+		Value: value,
+		Error: err,
+	}
+}
+
 //-----------------------------------------------------------------------------
 // Server
 //-----------------------------------------------------------------------------
+
+var nWorkers = flag.Int("w", 10, "Number of workers")
 
 // Server represents an RPC Server.
 type Server struct {
@@ -43,14 +74,13 @@ type Server struct {
 	RequestQueue chan Request
 }
 
+// Return a new RPC server
 func NewServer() *Server {
-	n := flag.Int("w", 10, "Number of workers")
-
 	srv := &Server{
 		serviceMap: make(ServiceMap),
 	}
 
-	srv.RequestQueue = WorkerPool(srv, *n)
+	srv.RequestQueue = workerPool(srv, *nWorkers)
 	return srv
 }
 
@@ -87,9 +117,7 @@ func (server *Server) RegisterName(name string, rcvr interface{}) error {
 	sname := reflect.Indirect(s.rcvr).Type().Name()
 
 	if !isExported(sname) {
-		s := "rpc.Register: type " + sname + " is not exported"
-		log.Print(s)
-		return errors.New(s)
+		return errors.New("rpc.Register: type " + sname + " is not exported")
 	}
 
 	if name != "" {
@@ -104,15 +132,14 @@ func (server *Server) RegisterName(name string, rcvr interface{}) error {
 	s.method = installValidMethods(s.typ)
 
 	if len(s.method) == 0 {
-		str := "rpc.Register: type " + sname + " has no exported methods of suitable type"
-		log.Print(str)
-		return errors.New(str)
+		return errors.New("rpc.Register: type " + sname + " has no exported methods of suitable type")
 	}
 
 	server.serviceMap[s.name] = s
 	return nil
 }
 
+// Takes a RPC request and produces result from the specified service
 func (server *Server) ServeRequest(req Request) *Result {
 	// Look up the request.
 	server.mu.RLock()
@@ -121,74 +148,31 @@ func (server *Server) ServeRequest(req Request) *Result {
 
 	if service == nil {
 		msg := "rpc: can't find service " + req.ServiceName()
-		return &Result{
-			Value: nil,
-			Error: NewServerError(ERR_INVALID_REQ, msg, nil),
-		} 
+		return NewResult(nil, NewServerError(ERR_INVALID_REQ, msg, nil))
 	}
 
 	reply, err := service.Call(req)
 
-	return &Result{
-		Value: reply,
-		Error: err,
-	}
-}
-
-func (server *Server) callServiceMethod(codec ServerCodec) {
-	// Read the request 
-	req, serr := codec.ReadRequest()
-	if serr != nil {
-		codec.WriteResponse(req, nil, serr)
-		return
-	}
-
-	// Look up the request.
-	server.mu.RLock()
-	service := server.serviceMap[req.ServiceName()]
-	server.mu.RUnlock()
-
-	if service == nil {
-		msg := "rpc: can't find service " + req.ServiceName()
-		codec.WriteResponse(req, nil, NewServerError(ERR_INVALID_REQ, msg, nil))
-		return
-	}
-
-	reply, err := service.Call(req)
-
-	// The return value for the method is an error.
-	if err != nil {
-		if e, ok := err.(*ServerError); !ok {
-			serr = NewServerError(ERR_USER_SERVICE, err.Error(), nil)
-		} else {
-			serr = e
-		}
-	}
-
-	if err := codec.WriteResponse(req, reply, serr); err != nil {
-		log.Fatal(err)
-	}
-
-	codec.Close()
+	return NewResult(reply, err)
 }
 
 //-----------------------------------------------------------------------------
-// 
+// Workers
 //-----------------------------------------------------------------------------
 
-//
-func WorkerPool(srv *Server, n int) chan Request {
+// Initialize a pool of worker goroutines
+func workerPool(srv *Server, n int) chan Request {
 	requests := make(chan Request)
 
 	for i := 0; i < n; i++ {
-		go Worker(srv, requests)
+		go worker(srv, requests)
 	}
 
 	return requests
 }
 
-//
-func Worker(srv *Server, requests chan Request) {
+// Worker function serve requests
+func worker(srv *Server, requests chan Request) {
 
 	for r := range requests {
 
