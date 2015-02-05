@@ -17,9 +17,10 @@ import (
 )
 
 //-----------------------------------------------------------------------------
-// Request
+// srvRequest
 //-----------------------------------------------------------------------------
-type jsonRequest struct {
+
+type srvRequest struct {
 	rpc.Request
 
 	result chan *rpc.Result
@@ -33,27 +34,27 @@ type jsonRequest struct {
 	Id      *json.RawMessage `json:"id"`
 }
 
-func (r jsonRequest) ServiceName() string {
+func (r srvRequest) ServiceName() string {
 	return r.serviceName
 }  
 
-func (r jsonRequest) MethodName() string {
+func (r srvRequest) MethodName() string {
 	return r.methodName
 }
 
-func (r jsonRequest) DecodeParams(args interface{}) error {
+func (r srvRequest) DecodeParams(args interface{}) error {
 	if args != nil {
 		return json.Unmarshal(*r.Params, &args)
 	}
 	return nil
 }
 
-func (r jsonRequest) Result() chan *rpc.Result {
+func (r srvRequest) Result() chan *rpc.Result {
 	return r.result
 }
 
-func newJsonRequest() *jsonRequest {
-	return &jsonRequest{
+func newRequest() *srvRequest {
+	return &srvRequest{
 		result: make(chan *rpc.Result),
 	}
 }
@@ -62,11 +63,11 @@ func newJsonRequest() *jsonRequest {
 // Reponse
 //-----------------------------------------------------------------------------
 
-type jsonResponse struct {
-	Version string           `json:"jsonrpc"`
-	Id      *json.RawMessage `json:"id"`
-	Result  interface{}      `json:"result,omitempty"`
-	Error   *jsonError       `json:"error,omitempty"`
+type srvResponse struct {
+	Version string            `json:"jsonrpc"`
+	Id      *json.RawMessage  `json:"id"`
+	Result  interface{}       `json:"result,omitempty"`
+	Error   *jsonError        `json:"error,omitempty"`
 }
 
 
@@ -78,7 +79,7 @@ func readRequest(reader io.Reader) (rpc.Request, error) {
 		return nil, newJsonError(JSON_ERR_INTERNAL, "Could not create JSON decoder", nil)
 	}
 
-	jreq := newJsonRequest()
+	jreq := newRequest()
 
 	if err := dec.Decode(&jreq); err != nil {
 		return jreq, newJsonError(JSON_ERR_INTERNAL, err.Error(), nil)
@@ -107,12 +108,12 @@ func writeResponse(writer io.Writer, request rpc.Request, result *rpc.Result) er
 		return errors.New("Could not create JSON encoder")
 	} 
 
-	jreq, ok := request.(*jsonRequest)
+	jreq, ok := request.(*srvRequest)
 	if !ok {
 		return errors.New("Could not cast to JSON request")
 	} 
 
-	jresp := jsonResponse{
+	jresp := srvResponse{
 		Version: jreq.Version,
 		Id: jreq.Id,
 	}

@@ -64,11 +64,11 @@ func (s *Service) Call(req Request) (interface{}, error) {
 	returnValues := function.Call([]reflect.Value{s.rcvr, argv, replyv,})
 
 	errInter := returnValues[0].Interface()
-	if err, ok := errInter.(error); ok {
-		return replyv, err
+	if err, ok := errInter.(error); ok && err != nil {
+		return nil, err
 	}
 
-	return replyv, nil
+	return replyv.Interface(), nil
 } 
 
 // Is this an exported - upper case - name?

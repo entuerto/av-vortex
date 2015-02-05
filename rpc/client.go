@@ -4,14 +4,16 @@
 
 package rpc
 
+type CallResult struct {
+	ServiceMethod string      // The name of the service and method to call.
+	Reply         interface{} // The reply from the RPC server
+ 	Error         error       // After completion, the error status.
+	Done          chan *CallResult  
+}
 
-type Client struct {}
-
-// Call invokes the named function, waits for it to complete, and returns its error status.
- func (client *Client) Call(serviceMethod string, args interface{}, reply interface{}) error {
-
- }
-
- func (client *Client) Close() error {
- 	
- }
+type Client interface {
+	// Call invokes the named function, waits for it to complete, and returns its error status.
+	Call(serviceMethod string, args, reply interface{}) *CallResult
+	// Close the connection
+	Close() error
+}

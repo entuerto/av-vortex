@@ -44,6 +44,8 @@ type Args struct {
 type Calculator int
 
 func (c Calculator) Add(args *Args, reply *int) error {
+	log.Printf("Add ( %d + %d )\n", args.A, args.B)
+
 	*reply = args.A + args.B
 	return nil
 }
