@@ -6,10 +6,10 @@ package json2
 
 import (
 	"encoding/json"
-	"errors"
+	_ "errors"
 	"io"
+	"log"	
 	"net/http"
-	"log"
 	_ "sync"
 	"strings"
 
@@ -71,28 +71,34 @@ type srvResponse struct {
 }
 
 
-func readRequest(reader io.Reader) (rpc.Request, error) {
+func readRequest(reader io.ReadCloser) (rpc.Request, error) {
 	log.Printf("[%p] ReadRequest...\n", reader)
+	defer reader.Close()
 
 	dec := json.NewDecoder(reader)
 	if dec == nil {
-		return nil, newJsonError(JSON_ERR_INTERNAL, "Could not create JSON decoder", nil)
+		rpc.ErrInternal.Message = "Could not create JSON decoder"
+		return nil, rpc.ErrInternal
 	}
 
 	jreq := newRequest()
 
 	if err := dec.Decode(&jreq); err != nil {
-		return jreq, newJsonError(JSON_ERR_INTERNAL, err.Error(), nil)
+		rpc.ErrInternal.Message = err.Error()
+		return jreq, rpc.ErrInternal 
 	}
 
 	if jreq.Version != "2.0" {
-		return jreq, newJsonError(JSON_ERR_INVALID_REQ, "RPC-JSON2: Invalid version", nil)
+		rpc.ErrInvalidRequest.Message = "RPC-JSON2: Invalid version"
+		return jreq, rpc.ErrInvalidRequest 
 	}
 
 	// find service
 	dot := strings.LastIndex(jreq.Method, ".")
 	if dot < 0 {
-		return jreq, newJsonError(JSON_ERR_INVALID_REQ, "RPC-JSON2: service/method request ill-formed: " + jreq.Method, nil)
+		rpc.ErrInvalidRequest.Message = "RPC-JSON2: service/method request ill-formed" 
+		rpc.ErrInvalidRequest.Data = jreq.Method
+		return jreq, rpc.ErrInvalidRequest 
 	}
 
 	jreq.serviceName = jreq.Method[:dot]
@@ -105,12 +111,14 @@ func writeResponse(writer io.Writer, request rpc.Request, result *rpc.Result) er
 
 	enc := json.NewEncoder(writer)
 	if enc == nil {
-		return errors.New("Could not create JSON encoder")
+		rpc.ErrInternal.Message = "Could not create JSON encoder"
+		return rpc.ErrInternal 
 	} 
 
 	jreq, ok := request.(*srvRequest)
 	if !ok {
-		return errors.New("Could not cast to JSON request")
+		rpc.ErrInternal.Message = "Could not cast to JSON request"
+		return rpc.ErrInternal 
 	} 
 
 	jresp := srvResponse{
@@ -147,15 +155,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("New connection established")
 	
+	var result *rpc.Result
+
 	request, err := readRequest(r.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+
+	if err == nil {
+	    h.RequestQueue <- request
+    	result = <-request.Result() // this blocks
+	} else {
+		result = rpc.NewResult(nil, err)
 	}
 
-    h.RequestQueue <- request
-    result := <-request.Result() // this blocks
-	
 	// Prevents Internet Explorer from MIME-sniffing a response away
 	// from the declared content-type
 	w.Header().Set("x-content-type-options", "nosniff")

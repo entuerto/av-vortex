@@ -34,7 +34,8 @@ func (s *Service) Call(req Request) (interface{}, error) {
 	// Find Method
 	serviceMethod := s.method[req.MethodName()]
 	if serviceMethod == nil {
-		return nil, NewServerError(ERR_NO_METHOD, "RPC: can't find method " + req.MethodName(), nil)
+		ErrMethodNotFound.Data = req.MethodName()
+		return nil, ErrMethodNotFound
 	}
 
 	var argv, replyv reflect.Value

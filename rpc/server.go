@@ -117,7 +117,7 @@ func (server *Server) RegisterName(name string, rcvr interface{}) error {
 	sname := reflect.Indirect(s.rcvr).Type().Name()
 
 	if !isExported(sname) {
-		return errors.New("rpc.Register: type " + sname + " is not exported")
+		return errors.New("RPC: type " + sname + " is not exported")
 	}
 
 	if name != "" {
@@ -125,14 +125,14 @@ func (server *Server) RegisterName(name string, rcvr interface{}) error {
 	}
 
 	if _, present := server.serviceMap[sname]; present {
-		return errors.New("rpc: service already defined: " + sname)
+		return errors.New("RPC: service already defined: " + sname)
 	}
 
 	s.name = sname
 	s.method = installValidMethods(s.typ)
 
 	if len(s.method) == 0 {
-		return errors.New("rpc.Register: type " + sname + " has no exported methods of suitable type")
+		return errors.New("RPC: type " + sname + " has no exported methods of suitable type")
 	}
 
 	server.serviceMap[s.name] = s
@@ -147,8 +147,8 @@ func (server *Server) ServeRequest(req Request) *Result {
 	server.mu.RUnlock()
 
 	if service == nil {
-		msg := "rpc: can't find service " + req.ServiceName()
-		return NewResult(nil, NewServerError(ERR_INVALID_REQ, msg, nil))
+		ErrMethodNotFound.Data = req.ServiceName() 
+		return NewResult(nil, ErrMethodNotFound)
 	}
 
 	reply, err := service.Call(req)
