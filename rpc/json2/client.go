@@ -51,6 +51,8 @@ type client struct {
 	remoteURL *url.URL
 	c *http.Client
 
+	queue chan *rpc.CallResult
+
 	mutex sync.Mutex
 	seq   uint64
 } 
@@ -81,45 +83,60 @@ func (c *client) decodeServerResponse(resp *http.Response, cres *rpc.CallResult)
 	}
 	return json.Unmarshal(*cresp.Result, cres.Reply)	
 }
+ 
+func (c *client) sender() {
+	for {
+		call := <- c.queue
+
+		c.mutex.Lock()
+		c.seq++
+
+		creq := &clientRequest{
+			Version: "2.0",
+			Method:  call.ServiceMethod,
+			Params:  call.Args,
+			Id:      uint64(c.seq),
+		}
+
+		c.mutex.Unlock()
+
+		body, err := c.encodeClientRequest(creq)
+		if err != nil {
+			call.Error = err
+			call.Done <- call
+			continue
+		}
+
+		req, err := http.NewRequest("POST", c.remoteURL.String(), body) 
+		if err != nil {
+			call.Error = err
+			call.Done <- call
+			continue
+		}
+
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+		// Callers should close resp.Body when done reading from it.
+		if resp, err := c.c.Do(req); err != nil {
+			call.Error = err
+		} else {
+			call.Error = c.decodeServerResponse(resp, call)
+		}
+
+		call.Done <- call
+	}
+}
 
 // Call invokes the named function, waits for it to complete, and returns its error status.
 func (c *client) Call(serviceMethod string, args, reply interface{})  *rpc.CallResult {
 
-	c.mutex.Lock()
-	c.seq++
-
-	creq := &clientRequest{
-		Version: "2.0",
-		Method:  serviceMethod,
-		Params:  args,
-		Id:      uint64(c.seq),
-	}
-
-	c.mutex.Unlock()
-
 	result := new(rpc.CallResult)
+	result.ServiceMethod = serviceMethod
+	result.Args = args
 	result.Reply = reply
-	
-	body, err := c.encodeClientRequest(creq)
-	if err != nil {
-		result.Error = err
-		return result
-	}
+	result.Done = make(chan *rpc.CallResult)
 
-	req, err := http.NewRequest("POST", c.remoteURL.String(), body) 
-	if err != nil {
-		result.Error = err
-		return result
-	}
-
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	// Callers should close resp.Body when done reading from it.
-	if resp, err := c.c.Do(req); err != nil {
-		result.Error = err
-	} else {
-		result.Error = c.decodeServerResponse(resp, result)
-	}
+	c.queue <- result
 
 	return result
 }
@@ -137,8 +154,13 @@ func NewClientHTTP(address, path string) rpc.Client {
 		log.Fatal(err)
 	}
 	
-	return &client{
+	httpClient:= &client{
 		remoteURL: u,
 		c: &http.Client{},
+		queue: make(chan *rpc.CallResult),
 	}
+
+	go httpClient.sender()
+
+	return httpClient
 }
