@@ -131,7 +131,6 @@ func writeResponse(writer io.Writer, request rpc.Request, result *rpc.Result) er
 	} else {
 		jresp.Result = result.Value
 	}
-
 	return enc.Encode(jresp)
 }
 
@@ -173,5 +172,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err := writeResponse(w, request, result); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Print(err)
 	}
 }

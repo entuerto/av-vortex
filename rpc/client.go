@@ -5,10 +5,10 @@
 package rpc
 
 type CallResult struct {
-	ServiceMethod string      // The name of the service and method to call.
+	ServiceMethod string        // The name of the service and method to call.
 	Args          interface{}
-	Reply         interface{} // The reply from the RPC server
- 	Error         error       // After completion, the error status.
+	Reply         interface{}   // The reply from the RPC server
+ 	Error         *ServerError  // After completion, the error status.
 	Done          chan *CallResult  
 }
 

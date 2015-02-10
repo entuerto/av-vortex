@@ -5,10 +5,13 @@
 package json2
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/entuerto/av-vortex/rpc"
 )
+
+var null = json.RawMessage([]byte("null"))
 
 type jsonError struct {
 	// A Number that indicates the error type that occurred.
@@ -39,8 +42,13 @@ func newJsonError(code int, message string, data interface{}) *jsonError {
 func newJsonErrorFromError(err error) *jsonError {
 	serr, ok := err.(*rpc.ServerError)
 	if !ok {
-		return newJsonError(rpc.ERR_INTERNAL, err.Error(), nil)
+		return newJsonError(rpc.ERR_INTERNAL, err.Error(), null)
 	}
 
-	return newJsonError(serr.Code, serr.Message, serr.Data)
+	data := serr.Data
+	if data == nil {
+		data = null
+	}
+
+	return newJsonError(serr.Code, serr.Message, data)
 }

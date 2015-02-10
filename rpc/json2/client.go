@@ -65,7 +65,7 @@ func (c *client) encodeClientRequest(creq *clientRequest) (io.Reader, error) {
 	return bytes.NewBuffer(buf), nil
 }
 
-func (c *client) decodeServerResponse(resp *http.Response, cres *rpc.CallResult) error {
+func (c *client) decodeServerResponse(resp *http.Response, callRes *rpc.CallResult) error {
 	defer resp.Body.Close()
 
 	dec := json.NewDecoder(resp.Body)
@@ -79,9 +79,16 @@ func (c *client) decodeServerResponse(resp *http.Response, cres *rpc.CallResult)
 	}
 
 	if cresp.Error != nil {
-		return json.Unmarshal(*cresp.Error, cres.Error)
+		var jerr jsonError
+
+		if err := json.Unmarshal(*cresp.Error, &jerr); err != nil {
+			return err
+		}
+
+		callRes.Error = rpc.NewServerError(jerr.Code, jerr.Message, jerr.Data)
+		return nil
 	}
-	return json.Unmarshal(*cresp.Result, cres.Reply)	
+	return json.Unmarshal(*cresp.Result, callRes.Reply)	
 }
  
 func (c *client) sender() {
@@ -102,14 +109,16 @@ func (c *client) sender() {
 
 		body, err := c.encodeClientRequest(creq)
 		if err != nil {
-			call.Error = err
+			call.Error = rpc.ErrInternal
+			call.Error.Message = err.Error()
 			call.Done <- call
 			continue
 		}
 
 		req, err := http.NewRequest("POST", c.remoteURL.String(), body) 
 		if err != nil {
-			call.Error = err
+			call.Error = rpc.ErrInternal
+			call.Error.Message = err.Error()
 			call.Done <- call
 			continue
 		}
@@ -118,9 +127,11 @@ func (c *client) sender() {
 
 		// Callers should close resp.Body when done reading from it.
 		if resp, err := c.c.Do(req); err != nil {
-			call.Error = err
-		} else {
-			call.Error = c.decodeServerResponse(resp, call)
+			call.Error = rpc.ErrInternal
+			call.Error.Message = err.Error()
+		} else if err := c.decodeServerResponse(resp, call); err != nil {
+			call.Error = rpc.ErrInternal
+			call.Error.Message = err.Error()
 		}
 
 		call.Done <- call

@@ -31,10 +31,15 @@ will not be sent back to the client.
 package rpc
 
 import (
-	"errors"
 	"flag"
 	"reflect"
 	"sync"
+)
+
+var (
+	ErrTypeNotExported   = NewServerError(ERR_SERVER, "RPC: type %s is not exported", nil)
+	ErrAlreadyDefined    = NewServerError(ERR_SERVER, "RPC: service already defined: %s", nil)
+	ErrNoExportedMethods = NewServerError(ERR_SERVER, "RPC: type %s has no exported methods of suitable type", nil)
 )
 
 // Client request. When the client sends a request it is in
@@ -117,7 +122,7 @@ func (server *Server) RegisterName(name string, rcvr interface{}) error {
 	sname := reflect.Indirect(s.rcvr).Type().Name()
 
 	if !isExported(sname) {
-		return errors.New("RPC: type " + sname + " is not exported")
+		return FmtServerErrorMessage(ErrTypeNotExported, sname)
 	}
 
 	if name != "" {
@@ -125,14 +130,14 @@ func (server *Server) RegisterName(name string, rcvr interface{}) error {
 	}
 
 	if _, present := server.serviceMap[sname]; present {
-		return errors.New("RPC: service already defined: " + sname)
+		return FmtServerErrorMessage(ErrAlreadyDefined, sname)
 	}
 
 	s.name = sname
 	s.method = installValidMethods(s.typ)
 
 	if len(s.method) == 0 {
-		return errors.New("RPC: type " + sname + " has no exported methods of suitable type")
+		return FmtServerErrorMessage(ErrNoExportedMethods, sname)
 	}
 
 	server.serviceMap[s.name] = s

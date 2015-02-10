@@ -43,11 +43,18 @@ func (e ServerError) Error() string {
 //-----------------------------------------------------------------------------
 // ServerErrorCreator
 //-----------------------------------------------------------------------------
-//type ServerErrorCreator interface {
+
+// Create ServerError objects
 func NewServerError(code int, msg string, d interface{}) *ServerError {
 	return &ServerError{
 		Code: code,
 		Message: msg,
 		Data: d,
 	}
+}
+
+// Format message for ServerError
+func FmtServerErrorMessage(svrError *ServerError, value interface{}) *ServerError {
+	svrError.Message = fmt.Sprintf(svrError.Message, value) 
+	return svrError
 }
