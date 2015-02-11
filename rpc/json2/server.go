@@ -6,13 +6,11 @@ package json2
 
 import (
 	"encoding/json"
-	_ "errors"
-	"io"
-	"log"	
+	"io"	
 	"net/http"
-	_ "sync"
 	"strings"
 
+	"github.com/golang/glog"
 	"github.com/entuerto/av-vortex/rpc"
 )
 
@@ -72,7 +70,7 @@ type srvResponse struct {
 
 
 func readRequest(reader io.ReadCloser) (rpc.Request, error) {
-	log.Printf("[%p] ReadRequest...\n", reader)
+	glog.V(2).Infof("[%p] ReadRequest...\n", reader)
 	defer reader.Close()
 
 	dec := json.NewDecoder(reader)
@@ -107,7 +105,7 @@ func readRequest(reader io.ReadCloser) (rpc.Request, error) {
 }
 
 func writeResponse(writer io.Writer, request rpc.Request, result *rpc.Result) error {
-	log.Printf("[%p]  WriteResponse...\n", writer)
+	glog.V(2).Infof("[%p]  WriteResponse...\n", writer)
 
 	enc := json.NewEncoder(writer)
 	if enc == nil {
@@ -152,7 +150,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("New connection established")
+	glog.V(0).Infoln("New connection established")
 	
 	var result *rpc.Result
 
@@ -172,6 +170,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err := writeResponse(w, request, result); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Print(err)
+		glog.Error(err)
 	}
 }

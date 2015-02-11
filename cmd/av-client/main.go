@@ -5,11 +5,13 @@
 package main
 
 import (
-   "log"
-   "time"
+	"flag"
+	"fmt"
+	"time"
 
-   "github.com/entuerto/av-vortex/rpc"
-   "github.com/entuerto/av-vortex/rpc/json2"
+	"github.com/golang/glog"
+	"github.com/entuerto/av-vortex/rpc"
+	"github.com/entuerto/av-vortex/rpc/json2"
 )
 
 type Args struct {
@@ -17,11 +19,14 @@ type Args struct {
 }
 
 func main() {
+	// Parse the command-line flags.
+	flag.Parse()
+
 	c := json2.NewClientHTTP("http://localhost:5000", "/rpc")
 
 	time.Sleep(3 * time.Second)
 
-	log.Println("Connecting...")
+	fmt.Println("Connecting...")
 
 	var reply int
 	args := &Args{2, 3}
@@ -34,9 +39,9 @@ func main() {
 				select {
 				case <- res.Done:
 					if (res.Error != nil) {
-						log.Fatal(res.Error)
+						glog.Fatal(res.Error)
 					}
-					log.Printf("Reply: %d", reply)
+					fmt.Printf("Reply: %d\n", reply)
 					return
 				}
 			}

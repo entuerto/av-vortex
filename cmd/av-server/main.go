@@ -11,14 +11,14 @@ package main
 */
 
 import (
-   "flag"
-   "log"
-   "runtime"
-   "errors"
-   "net/http"
+	"flag"
+	"runtime"
+	"errors"
+	"net/http"
 
-   "github.com/entuerto/av-vortex/rpc"
-   "github.com/entuerto/av-vortex/rpc/json2"
+	"github.com/golang/glog"
+ 	"github.com/entuerto/av-vortex/rpc"
+	"github.com/entuerto/av-vortex/rpc/json2"
 )
 
 type ServerInfo struct {
@@ -27,7 +27,7 @@ type ServerInfo struct {
 }
 
 func (si *ServerInfo) ServerStats(param interface{}, reply *ServerInfo) error {
-	log.Printf("ServerStats...\n")
+	glog.Infof("ServerStats...\n")
 
 	if reply == nil {
 		return errors.New("reply nil")
@@ -44,7 +44,7 @@ type Args struct {
 type Calculator int
 
 func (c Calculator) Add(args *Args, reply *int) error {
-	log.Printf("Add ( %d + %d )\n", args.A, args.B)
+	glog.Infof("Add ( %d + %d )\n", args.A, args.B)
 
 	*reply = args.A + args.B
 	return nil
@@ -64,16 +64,16 @@ func main() {
  	server := rpc.NewServer()
 
 	if err := server.Register(si); err != nil {
-		log.Println(err)
+		glog.Error(err)
 	}
 
 	if err := server.Register(ca); err != nil {
-		log.Println(err)
+		glog.Error(err)
 	}
 
 	json2.HandleHTTP("/rpc", server)
 
-	log.Println("Waiting for connection...")
+	glog.Infoln("Waiting for connection...")
 
-	log.Fatal(http.ListenAndServe(*addr, nil))
+	glog.Fatal(http.ListenAndServe(*addr, nil))
 }

@@ -6,8 +6,6 @@ package rpc
 
 import (
 	"errors"
-	_ "log"
-	_ "strings"
 	"sync"
 	"testing"
 )

@@ -9,11 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"sync"
 
+	"github.com/golang/glog"
 	"github.com/entuerto/av-vortex/rpc"
 )
 
@@ -162,7 +162,7 @@ func (c *client) Close() error {
 func NewClientHTTP(address, path string) rpc.Client {
 	u, err := url.Parse(address + path)
 	if err != nil {
-		log.Fatal(err)
+		glog.Fatal(err)
 	}
 	
 	httpClient:= &client{
